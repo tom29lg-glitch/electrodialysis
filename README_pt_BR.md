@@ -1,84 +1,242 @@
-# Simulação de eletrodiálise 2D
+# Simulação de Eletrodiálise 2D
 
-Este projeto simula o transporte de Na⁺ e Cl⁻ em uma célula de eletrodiálise com três canais e duas membranas (CEM e AEM). O modelo utiliza uma discretização pelo método dos volumes finitos, as equações de Nernst–Planck, a eletroneutralidade e condições de interface de Donnan.
+## 1. Para que serve este projeto?
 
-## Início rápido
+Este projeto permite simular o funcionamento de uma célula de eletrodiálise utilizando Python.
 
-1. Instalar o Python e as dependências:
+A eletrodiálise é uma técnica que utiliza corrente elétrica e membranas para transportar íons presentes na água.
 
-   ```bash
-   python -m pip install -r requirements.txt
-   ```
+Na nossa simulação, estudamos dois íons:
+- **Na⁺**: íon sódio.
+- **Cl⁻**: íon cloreto.
 
-2. Alterar os parâmetros em `config.json`.
-3. Executar a simulação a partir da pasta do projeto:
+Nossa célula possui **três canais e duas membranas**:
 
-   ```bash
-   python main.py
-   ```
+- **CEM**: membrana que permite principalmente a passagem de íons positivos (cátions).
+- **AEM**: membrana que permite principalmente a passagem de íons negativos (ânions).
 
-Os resultados são salvos em uma nova subpasta de `resultats/`, identificada pelo nome da simulação e pela data de execução.
+O programa calcula, entre outras grandezas:
+- A concentração dos íons na célula.
+- O potencial elétrico.
+- O transporte dos íons através das membranas.
+- A corrente elétrica.
 
-## Principais parâmetros (`config.json`)
+O objetivo é compreender como diferentes parâmetros, como a tensão elétrica ou as propriedades das membranas, influenciam o funcionamento da célula.
 
-| Parâmetro | Significado | Exemplo |
-| --- | --- | --- |
-| `simulation_name` | Nome da simulação | `test_1p5V` |
-| `voltage` | Tensão-alvo (V) | `1.5` |
-| `ions.Na+.diffusion` | Coeficiente de difusão de Na⁺ (m²/s) | `2.5e-9` |
-| `ions.Cl-.diffusion` | Coeficiente de difusão de Cl⁻ (m²/s) | `2.0e-9` |
-| `concentration_inlet` | Concentração na entrada (mol/m³) | `500` |
-| `temperature` | Temperatura (K) | `298.15` |
-| `velocity` | Velocidade média (m/s) | `0.005` |
-| `membrane.porosity` | Porosidade das membranas | `0.15` |
-| `membrane.charge_cem` | Carga fixa da CEM (conforme a convenção do modelo) | `-1000` |
-| `membrane.charge_aem` | Carga fixa da AEM (conforme a convenção do modelo) | `1000` |
-| `mesh.nx_regions` | Número de células nas cinco regiões ao longo de x | `[9,6,15,6,9]` |
-| `mesh.ny` | Número de células ao longo de y | `18` |
-| `newton.tolerance` | Tolerância do solucionador | `4e-7` |
-| `newton.max_iterations` | Limite de iterações | `60` |
-| `initial_solution` | Caminho opcional para uma solução `.npz` compatível, ou `null` | `null` |
-| `generate_plots` | Gerar gráficos | `true` |
-| `run_validation` | Executar verificações numéricas | `true` |
+## 2. Como instalar o projeto?
 
-Ordem das cinco regiões ao longo de x: canal 1, CEM, canal 2, AEM, canal 3.
+### Etapa 1 — Baixar o projeto
 
-Exemplos de malha:
+Abra o repositório no GitHub e clique em:
 
-- Rápida: `nx_regions = [3,2,5,2,3]`, `ny = 6` → 15 × 6.
-- Intermediária: `nx_regions = [9,6,15,6,9]`, `ny = 18` → 45 × 18.
-- Mais refinada: `nx_regions = [15,10,25,10,15]`, `ny = 30` → 75 × 30.
+**Code → Download ZIP**
 
-Essas classificações são relativas: ainda é necessário realizar um estudo de convergência de malha para obter resultados quantitativos confiáveis.
+Em seguida, extraia o arquivo ZIP no computador.
 
-## Organização
+Também é possível obter o projeto utilizando Git:
 
-```text
-electrodialysis/
-├── main.py                 # Ponto de entrada
-├── config.json             # Parâmetros definidos pelo usuário
-├── solver.py               # Solucionador físico e numérico
-├── continuation.py         # Script de continuação da tensão
-├── visualization.py        # Gráficos e diagnósticos
-├── validation.py           # Verificações numéricas
-├── requirements.txt        # Dependências Python
-├── resultats/              # Resultados das simulações
-├── references/             # Referências, incluindo COMSOL
-├── archives/               # Scripts e gráficos antigos
-├── AVANCEMENT_ET_LIMITES.md
-└── README.md
+```bash
+git clone https://github.com/tom29lg-glitch/electrodialysis.git
 ```
 
-## Resultados e validação
+### Etapa 2 — Instalar o Python
 
-Para cada simulação convergida, o programa pode salvar `solution.npz`, gráficos em PNG e um diagnóstico na pasta da simulação. As verificações incluem, entre outros aspectos, os balanços de conservação, a eletroneutralidade e as condições de Donnan.
+É necessário ter o Python instalado no computador.
 
-**Importante:** um resíduo pequeno e o cumprimento dos balanços discretos não comprovam nem a convergência de malha nem a validade experimental do modelo.
+Para verificar, abra um terminal e digite:
 
-## Limitações atuais
+```bash
+python --version
+```
 
-Atualmente, o solucionador foi desenvolvido para duas espécies monovalentes, Na⁺ e Cl⁻. Simplesmente alterar os nomes dos íons em `config.json` não é suficiente para modelar outros íons, especialmente espécies multivalentes ou radioativas. Seria necessário ampliar o modelo físico e o código.
+Se o Python não estiver instalado, faça o download em https://www.python.org/downloads/.
 
-## Recomendações para compartilhamento
+Em alguns computadores, especialmente nos Macs, o comando utilizado é `python3` em vez de `python`.
 
-Manter os arquivos de código-fonte e `requirements.txt` no repositório compartilhado. Evitar incluir pastas grandes de resultados, caches do Python e arquivos temporários, a menos que esses resultados sejam necessários para reproduzir um estudo.
+### Etapa 3 — Instalar as bibliotecas necessárias
+
+Abra a pasta do projeto no VS Code e, em seguida, abra um terminal.
+
+Execute:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+Esse comando instala as bibliotecas necessárias para o funcionamento do programa, incluindo NumPy, SciPy e Matplotlib.
+
+Normalmente, essa instalação precisa ser feita apenas uma vez.
+
+## 3. Como executar uma simulação?
+
+Basta seguir três etapas.
+
+**Etapa 1 — Abrir `config.json`**
+
+Esse arquivo contém todos os parâmetros que podem ser modificados.
+
+Por exemplo:
+
+```json
+"simulation_name": "test_1p5V",
+"voltage": 1.5,
+"concentration_inlet": 500,
+"temperature": 298.15,
+"velocity": 0.005
+```
+
+Esses parâmetros correspondem a:
+- `simulation_name`: nome dado à simulação.
+- `voltage`: tensão elétrica aplicada, em volts.
+- `concentration_inlet`: concentração dos íons na entrada.
+- `temperature`: temperatura em kelvin.
+- `velocity`: velocidade média da água nos canais.
+
+Para uma primeira simulação, recomenda-se manter os parâmetros que já estão definidos no arquivo.
+
+**Etapa 2 — Executar o programa**
+
+No terminal do VS Code, dentro da pasta do projeto:
+
+```bash
+python main.py
+```
+
+**Etapa 3 — Aguardar o término do cálculo**
+
+O programa realiza automaticamente os cálculos necessários.
+
+Para facilitar a convergência numérica, ele pode começar com uma tensão baixa e aumentá-la gradualmente até atingir a tensão desejada.
+
+Quando a simulação termina, o programa apresenta a seguinte pergunta:
+
+```text
+Voulez-vous sauvegarder les résultats ? [O/n] :
+```
+
+- Pressione **Enter** ou digite `o` para manter os resultados.
+- Digite `n` para excluir os resultados dessa simulação.
+
+*Observação: a mensagem aparece em francês porque está definida dessa forma no código Python.*
+
+## 4. Onde encontrar os resultados?
+
+Os resultados são salvos automaticamente na pasta `resultats/`.
+
+Cada simulação possui sua própria subpasta.
+
+Por exemplo:
+
+```text
+resultats/
+└── test_1p5V_45x18_2026-10-15_14h30m00s/
+    ├── config.json
+    ├── solution.npz
+    ├── export.csv
+    ├── calcul.log
+    └── figures/
+```
+
+**Para que servem esses arquivos?**
+
+| Arquivo | Função |
+|---|---|
+| `config.json` | Armazena os parâmetros utilizados na simulação. |
+| `solution.npz` | Contém todos os resultados numéricos da simulação. |
+| `export.csv` | Permite visualizar e analisar os resultados no Excel ou Python. |
+| `calcul.log` | Contém informações sobre a execução e a convergência do cálculo. |
+| `figures/` | Contém os gráficos gerados automaticamente. |
+
+Os gráficos permitem visualizar, entre outras informações, as concentrações de Na⁺ e Cl⁻, o potencial elétrico e os perfis ao longo dos canais.
+
+## 5. Quais parâmetros podem ser modificados?
+
+Todos os principais parâmetros estão no arquivo `config.json`.
+
+| Parâmetro | Para que serve? |
+|---|---|
+| `voltage` | Modificar a tensão aplicada. |
+| `ions.Na+.diffusion` | Modificar o coeficiente de difusão do sódio. |
+| `ions.Cl-.diffusion` | Modificar o coeficiente de difusão do cloreto. |
+| `concentration_inlet` | Modificar a concentração na entrada. |
+| `temperature` | Modificar a temperatura. |
+| `velocity` | Modificar a velocidade média da água. |
+| `membrane.porosity` | Modificar a porosidade das membranas. |
+| `membrane.charge_cem` | Modificar a carga fixa da membrana CEM. |
+| `membrane.charge_aem` | Modificar a carga fixa da membrana AEM. |
+| `mesh` | Modificar a resolução da malha numérica. |
+| `generate_plots` | Ativar ou desativar a geração de gráficos. |
+| `generate_csv` | Ativar ou desativar a exportação para CSV. |
+| `run_validation` | Ativar ou desativar as verificações numéricas. |
+
+Para os parâmetros físicos, é importante respeitar as unidades indicadas no arquivo de configuração.
+
+**Atenção:** o modelo atual foi desenvolvido para os íons Na⁺ e Cl⁻. Ainda não é possível simular corretamente outros íons apenas alterando seus nomes.
+
+## 6. Como escolher a malha numérica?
+
+A malha numérica corresponde à divisão do domínio em pequenas células utilizadas para realizar os cálculos.
+
+Quanto mais refinada for a malha, maior poderá ser a precisão da simulação, mas também maior será o tempo necessário para os cálculos.
+
+No arquivo `config.json`, os parâmetros são:
+
+```json
+"nx_regions": [9, 6, 15, 6, 9],
+"ny": 18
+```
+
+Os cinco números de `nx_regions` correspondem às cinco regiões do modelo:
+
+**Canal 1 → CEM → Canal 2 → AEM → Canal 3**
+
+Veja três exemplos:
+
+| Malha | Parâmetros | Utilização |
+|---|---|---|
+| 15 × 6 | `[3,2,5,2,3]`, `ny=6` | Testes muito rápidos |
+| 45 × 18 | `[9,6,15,6,9]`, `ny=18` | Simulações habituais |
+| 75 × 30 | `[15,10,25,10,15]`, `ny=30` | Cálculos mais detalhados |
+
+**Para começar, recomenda-se utilizar a malha 45 × 18.**
+
+Uma malha mais refinada não garante automaticamente um resultado exato: é necessário comparar diferentes malhas para verificar a convergência numérica.
+
+## 7. Para que servem os diferentes scripts?
+
+| Arquivo | Função |
+|---|---|
+| `main.py` | Inicia e organiza toda a simulação. |
+| `config.json` | Contém os parâmetros que podem ser modificados. |
+| `solver.py` | Realiza os cálculos físicos e numéricos. |
+| `visualization.py` | Gera os gráficos. |
+| `validation.py` | Verifica determinados resultados numéricos. |
+| `export_csv.py` | Exporta os resultados para um arquivo CSV. |
+| `continuation.py` | Script antigo de continuação da tensão, mantido separadamente. |
+| `requirements.txt` | Lista as bibliotecas Python necessárias. |
+
+**Para uma utilização normal, basta modificar `config.json` e executar `main.py`.** Não é necessário modificar os outros scripts.
+
+## 8. Como trabalhar em equipe utilizando o GitHub?
+
+Para obter as últimas modificações do projeto:
+
+```bash
+git pull
+```
+
+Para enviar suas próprias modificações, recomenda-se criar uma branch e propor um Pull Request no GitHub.
+
+Os arquivos de resultados normalmente são mantidos em cada computador e não são enviados automaticamente para o GitHub.
+
+## 9. Quais são as limitações do modelo?
+
+O programa utiliza um método numérico chamado **método dos volumes finitos** para resolver as equações de transporte dos íons.
+
+O modelo considera, entre outros fenômenos, a difusão, a migração elétrica, o transporte associado ao escoamento e as propriedades das membranas.
+
+No entanto:
+- Atualmente, o modelo está limitado a dois íons monovalentes: Na⁺ e Cl⁻.
+- Ele ainda não está adaptado para simular íons radioativos ou multivalentes.
+- Os resultados precisam ser verificados, especialmente por meio da comparação entre diferentes malhas numéricas.
+- A convergência numérica, por si só, não garante que o modelo represente perfeitamente um experimento real.
