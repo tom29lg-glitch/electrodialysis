@@ -1,0 +1,59 @@
+<?xml version="1.0"?>
+<!DOCTYPE Xdmf SYSTEM "Xdmf.dtd" []>
+<Xdmf Version="3.0" xmlns:xi="https://www.w3.org/2001/XInclude">
+  <Domain>
+    <Grid Name="mesh" GridType="Uniform">
+      <Topology TopologyType="Triangle" NumberOfElements="15766" NodesPerElement="3">
+        <DataItem Dimensions="15766 3" NumberType="Int" Format="HDF">electrodialysis_pnp_preparation.h5:/Mesh/mesh/topology</DataItem>
+      </Topology>
+      <Geometry GeometryType="XY">
+        <DataItem Dimensions="8084 2" Format="HDF">electrodialysis_pnp_preparation.h5:/Mesh/mesh/geometry</DataItem>
+      </Geometry>
+    </Grid>
+    <Grid Name="Potentiel_electrique" GridType="Collection" CollectionType="Temporal">
+      <Grid Name="Potentiel_electrique" GridType="Uniform">
+        <xi:include xpointer="xpointer(/Xdmf/Domain/Grid[@GridType='Uniform'][1]/*[self::Topology or self::Geometry])" />
+        <Time Value="0" />
+        <Attribute Name="Potentiel_electrique" AttributeType="Scalar" Center="Node">
+          <DataItem Dimensions="8084 1" Format="HDF">electrodialysis_pnp_preparation.h5:/Function/Potentiel_electrique/0</DataItem>
+        </Attribute>
+      </Grid>
+    </Grid>
+    <Grid Name="Concentration_Na" GridType="Collection" CollectionType="Temporal">
+      <Grid Name="Concentration_Na" GridType="Uniform">
+        <xi:include xpointer="xpointer(/Xdmf/Domain/Grid[@GridType='Uniform'][1]/*[self::Topology or self::Geometry])" />
+        <Time Value="0" />
+        <Attribute Name="Concentration_Na" AttributeType="Scalar" Center="Node">
+          <DataItem Dimensions="8084 1" Format="HDF">electrodialysis_pnp_preparation.h5:/Function/Concentration_Na/0</DataItem>
+        </Attribute>
+      </Grid>
+    </Grid>
+    <Grid Name="Concentration_Cl" GridType="Collection" CollectionType="Temporal">
+      <Grid Name="Concentration_Cl" GridType="Uniform">
+        <xi:include xpointer="xpointer(/Xdmf/Domain/Grid[@GridType='Uniform'][1]/*[self::Topology or self::Geometry])" />
+        <Time Value="0" />
+        <Attribute Name="Concentration_Cl" AttributeType="Scalar" Center="Node">
+          <DataItem Dimensions="8084 1" Format="HDF">electrodialysis_pnp_preparation.h5:/Function/Concentration_Cl/0</DataItem>
+        </Attribute>
+      </Grid>
+    </Grid>
+    <Grid Name="Charge_fixe" GridType="Collection" CollectionType="Temporal">
+      <Grid Name="Charge_fixe" GridType="Uniform">
+        <xi:include xpointer="xpointer(/Xdmf/Domain/Grid[@GridType='Uniform'][1]/*[self::Topology or self::Geometry])" />
+        <Time Value="0" />
+        <Attribute Name="Charge_fixe" AttributeType="Scalar" Center="Cell">
+          <DataItem Dimensions="15766 1" Format="HDF">electrodialysis_pnp_preparation.h5:/Function/Charge_fixe/0</DataItem>
+        </Attribute>
+      </Grid>
+    </Grid>
+    <Grid Name="Permittivite_electrique" GridType="Collection" CollectionType="Temporal">
+      <Grid Name="Permittivite_electrique" GridType="Uniform">
+        <xi:include xpointer="xpointer(/Xdmf/Domain/Grid[@GridType='Uniform'][1]/*[self::Topology or self::Geometry])" />
+        <Time Value="0" />
+        <Attribute Name="Permittivite_electrique" AttributeType="Scalar" Center="Cell">
+          <DataItem Dimensions="15766 1" Format="HDF">electrodialysis_pnp_preparation.h5:/Function/Permittivite_electrique/0</DataItem>
+        </Attribute>
+      </Grid>
+    </Grid>
+  </Domain>
+</Xdmf>

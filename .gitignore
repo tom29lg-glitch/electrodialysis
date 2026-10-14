@@ -1,0 +1,21 @@
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Environnements Python
+.venv/
+venv/
+.env
+.env.*
+
+# Resultats de simulation
+resultats/
+*.npz
+
+# Fichiers systeme macOS
+.DS_Store
+
+# Fichiers temporaires
+*.log

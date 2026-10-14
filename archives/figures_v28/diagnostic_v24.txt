@@ -1,0 +1,9 @@
+V24 — diagnostics extraits du fichier V23
+Source: resultats_v28/essai_75x30/solution.npz
+Grille: 75 x 30
+Converge: True
+Canal 1: c_sel entree=501.635240, sortie=525.309552 mol/m3, variation=+23.674312 mol/m3
+Canal 3: c_sel entree=495.395686, sortie=445.317823 mol/m3, variation=-50.077863 mol/m3
+Canal 5: c_sel entree=501.849920, sortie=527.976003 mol/m3, variation=+26.126083 mol/m3
+Courant moyen par interface (A/m2): -1739.2976, -1739.2976, -1739.2976, -1739.2976
+Sauts moyens de potentiel de Donnan (mV): -16.585690, +35.795429, +38.234012, -16.105535

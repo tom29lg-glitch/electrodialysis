@@ -1,0 +1,187 @@
+#!/usr/bin/env python3
+"""V27 : convergence en maillage du modele V23 a tension fixee.
+
+Exemple : python convergence_maillage_v27.py --target 1.5
+La V23 reste inchangee. Essai direct par prolongement du maillage precedent ;
+si echec, initialisation basse tension et continuation V25 sur la grille.
+"""
+import argparse
+import csv
+import os
+from pathlib import Path
+import subprocess
+import sys
+import numpy as np
+
+GRIDS = [(9, 6, 15, 6, 9, 18), (12, 8, 20, 8, 12, 24), (15, 10, 25, 10, 15, 30)]
+
+
+def metrics(path):
+    with np.load(path, allow_pickle=False) as d:
+        if not bool(d['converged']) or float(d['residual_max']) >= 1e-6:
+            raise ValueError(f'Solution non convergee: {path}')
+        cna, ccl, reg = d['c_na'], d['c_cl'], d['region']
+        if min(cna.min(), ccl.min()) <= 0:
+            raise ValueError(f'Concentration non positive: {path}')
+        # dx est constant a l'interieur de chaque region ; reconstruit sans approximation.
+        counts = [int(np.count_nonzero(reg == r)) for r in range(1, 6)]
+        widths = d['widths']
+        dx = np.concatenate([np.full(n, float(w)/n) for w, n in zip(widths, counts)])
+        v = np.asarray(d['velocity_x'])
+        mask = reg == 3
+        weights = v[mask] * dx[mask]
+        if not np.any(weights > 0):
+            raise ValueError('Debit du diluat nul')
+        cout = float(np.average(0.5*(cna[-1, mask]+ccl[-1, mask]), weights=weights))
+        c0 = float(d['c_inlet'])
+        ix = np.asarray(d['interface_indices'], dtype=int)
+        currents = np.asarray(d['current_x'])[:, ix].mean(axis=0)
+        return {
+            'nx': int(len(d['x'])), 'ny': int(len(d['y'])),
+            'cells': int(cna.size), 'unknowns': int(d['solution_vector'].size),
+            'voltage_V': float(d['voltage']), 'residual': float(d['residual_max']),
+            'current_Am2': float(currents.mean()),
+            'current_interface_spread_Am2': float(np.ptp(currents)),
+            'diluate_outlet_molm3': cout,
+            'diluate_removal_percent': 100*(c0-cout)/c0,
+            'diluate_min_molm3': float(cna[:, mask].min()),
+            'na_min_molm3': float(cna.min()), 'cl_min_molm3': float(ccl.min()),
+            'file': str(path),
+        }
+
+
+def execute(command, env, log):
+    with log.open('w', encoding='utf-8') as f:
+        return subprocess.run(command, env=env, stdout=f, stderr=subprocess.STDOUT, check=False).returncode
+
+
+def valid(path, target, counts):
+    if not path.is_file():
+        return False
+    try:
+        m = metrics(path)
+        with np.load(path, allow_pickle=False) as d:
+            actual = [int(np.count_nonzero(d['region'] == r)) for r in range(1, 6)]
+        return actual == list(counts[:5]) and m['ny'] == counts[5] and abs(m['voltage_V']-target)<1e-8
+    except (ValueError, KeyError, OSError):
+        return False
+
+
+def plot(rows, folder):
+    try:
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+    except ImportError:
+        print('Matplotlib absent : CSV uniquement.')
+        return
+    for key, ylabel, name in [
+        ('current_Am2','Courant moyen (A/m²)','courant_vs_maillage.png'),
+        ('diluate_outlet_molm3','Diluat en sortie (mol/m³)','diluat_vs_maillage.png'),
+        ('diluate_removal_percent','Dessalement (%)','dessalement_vs_maillage.png'),
+    ]:
+        fig, ax = plt.subplots(figsize=(7,4.5))
+        ax.plot([r['cells'] for r in rows], [r[key] for r in rows], 'o-')
+        ax.set(xlabel='Nombre de cellules', ylabel=ylabel)
+        ax.grid(alpha=0.3)
+        fig.tight_layout()
+        fig.savefig(folder/name, dpi=170)
+        plt.close(fig)
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__)
+    base = Path(__file__).resolve().parent
+    p.add_argument('--solver', type=Path, default=base/'electrodialyse_membranes_v28.py')
+    p.add_argument('--continuation', type=Path, default=base/'continuation_tension_v25.py')
+    p.add_argument('--reference', type=Path, default=base/'resultats_v25_1p5V/steps/v_1.50000000.npz')
+    p.add_argument('--initial-low', type=Path, default=base/'resultats_v28/essai_45x18/solution.npz')
+    p.add_argument('--target', type=float, default=1.5)
+    p.add_argument('--output', type=Path, default=Path('resultats_v27'))
+    p.add_argument('--max-grids', type=int, choices=[1,2,3], default=3)
+    p.add_argument('--initial-step', type=float, default=0.006)
+    p.add_argument('--max-step', type=float, default=0.05)
+    args = p.parse_args()
+    for f in (args.solver, args.reference, args.initial_low, args.continuation):
+        if not f.is_file():
+            p.error(f'Fichier introuvable : {f}')
+    if not valid(args.reference, args.target, GRIDS[0]):
+        p.error('La reference ne correspond pas au maillage 45x18 converge a la tension cible')
+    folder = args.output.resolve()
+    folder.mkdir(parents=True, exist_ok=True)
+    rows = [metrics(args.reference)]
+    previous = args.reference.resolve()
+    with np.load(args.reference, allow_pickle=False) as ref:
+        params = {
+            'ED_WIDTHS': ','.join(map(str, ref['widths'])),
+            'ED_HEIGHT': str(float(ref['y'][-1]+ref['y'][0])),
+            'ED_C_INLET': str(float(ref['c_inlet'])),
+            'ED_U_AVG': str(float(ref['u_avg'])),
+            'ED_MEM_POROSITY': str(float(ref['membrane_porosity'])),
+            'ED_X_CEM': str(float(ref['xreg'][1])),
+            'ED_X_AEM': str(float(ref['xreg'][3])),
+            'ED_T': str(float(ref['temperature'])),
+            'ED_D_NA': str(float(ref['Dna_region'][0])),
+            'ED_D_CL': str(float(ref['Dcl_region'][0])),
+        }
+    def report():
+        with (folder/'summary_v27.csv').open('w', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=list(rows[0]))
+            writer.writeheader(); writer.writerows(rows)
+        plot(rows, folder)
+        if len(rows) > 1:
+            print('\nComparaison des maillages successifs :')
+            for a, b in zip(rows, rows[1:]):
+                print(f"  {a['nx']}x{a['ny']} -> {b['nx']}x{b['ny']}")
+                for key in ('current_Am2','diluate_outlet_molm3','diluate_removal_percent','diluate_min_molm3'):
+                    diff = b[key]-a[key]
+                    rel = 100*abs(diff)/max(abs(b[key]), 1e-12)
+                    print(f'    {key}: {b[key]:.9g}, ecart={diff:+.6g}, relatif={rel:.4g}%')
+            print('Ces ecarts ne constituent pas a eux seuls une preuve de convergence asymptotique.')
+    print(f'V27 : reference {rows[0]["nx"]}x{rows[0]["ny"]}, U={args.target} V', flush=True)
+    for grid in GRIDS[1:args.max_grids]:
+        nx = sum(grid[:5]); ny = grid[5]
+        case = folder/f'maillage_{nx}x{ny}'
+        case.mkdir(exist_ok=True)
+        final = case/f'v_{args.target:.8f}.npz'
+        env = os.environ.copy()
+        env.update(params)
+        env.update(ED_NX=','.join(map(str,grid[:5])), ED_NY=str(ny),
+                   ED_VOLTAGE=str(args.target), ED_INIT_NPZ=str(previous),
+                   ED_OUTPUT_NPZ=str(final))
+        print(f'\n--- Maillage {nx}x{ny} ({nx*ny} cellules) ---', flush=True)
+        if not valid(final, args.target, grid):
+            print('Essai direct par prolongement...', flush=True)
+            status = execute([sys.executable,str(args.solver.resolve())], env, case/'direct.log')
+            if status != 0 or not valid(final, args.target, grid):
+                print('Essai direct non converge ; continuation sur cette grille...', flush=True)
+                low = case/'initial_low.npz'
+                with np.load(args.initial_low, allow_pickle=False) as init:
+                    low_voltage = float(init['voltage'])
+                env.update(ED_VOLTAGE=str(low_voltage),
+                           ED_INIT_NPZ=str(args.initial_low.resolve()), ED_OUTPUT_NPZ=str(low))
+                status = execute([sys.executable,str(args.solver.resolve())], env, case/'initial_low.log')
+                if status != 0 or not valid(low, low_voltage, grid):
+                    print(f'ECHEC : initialisation basse tension. Voir {case}/initial_low.log')
+                    report(); return 2
+                command = [sys.executable,str(args.continuation.resolve()),
+                           '--solver',str(args.solver.resolve()),'--initial',str(low),
+                           '--target',str(args.target),'--output',str(case/'continuation'),
+                           '--initial-step',str(args.initial_step),'--max-step',str(args.max_step)]
+                status = execute(command, env, case/'continuation.log')
+                candidate = case/'continuation'/'steps'/f'v_{args.target:.8f}.npz'
+                if status != 0 or not valid(candidate, args.target, grid):
+                    print(f'ECHEC : continuation. Voir {case}/continuation.log')
+                    report(); return 2
+                final = candidate
+        m = metrics(final)
+        rows.append(m)
+        previous = final.resolve()
+        print(f"OK : I={m['current_Am2']:.7g} A/m2 ; diluat={m['diluate_outlet_molm3']:.7g} mol/m3 ; R={m['residual']:.2e}", flush=True)
+        report()
+    report()
+    print(f'\nV27 terminee : {folder}/summary_v27.csv', flush=True)
+    return 0
+
+if __name__ == '__main__':
+    raise SystemExit(main())

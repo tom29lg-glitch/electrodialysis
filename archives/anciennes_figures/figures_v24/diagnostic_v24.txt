@@ -1,0 +1,9 @@
+V24 — diagnostics extraits du fichier V23
+Source: electrodialyse_membranes_v23.npz
+Grille: 45 x 18
+Converge: True
+Canal 1: c_sel entree=500.010194, sortie=500.141686 mol/m3, variation=+0.131492 mol/m3
+Canal 3: c_sel entree=499.973461, sortie=499.719820 mol/m3, variation=-0.253641 mol/m3
+Canal 5: c_sel entree=500.007688, sortie=500.108308 mol/m3, variation=+0.100620 mol/m3
+Courant moyen par interface (A/m2): -7.4197355, -7.4197356, -7.4197356, -7.4197356
+Sauts moyens de potentiel de Donnan (mV): -22.586833, +22.703495, +22.689538, -22.600534
