@@ -25,6 +25,9 @@ def main():
     na=np.asarray(a['c_na']);cl=np.asarray(a['c_cl']);phi=np.asarray(a['phi']);v=np.asarray(a['velocity_x'])
     if na.shape != (len(y),len(x)) or cl.shape!=na.shape or phi.shape!=na.shape: raise ValueError('Dimensions incompatibles')
     bounds=np.r_[0.,np.cumsum(widths)]
+    # V29 : aretes reelles des cellules (maillage eventuellement non uniforme).
+    dxs=np.asarray(a['dx']) if 'dx' in a.files else widths[reg-1]/np.bincount(reg-1,minlength=5)[reg-1]
+    xedges=np.r_[0.,np.cumsum(dxs)]
     def finish(fig,name):
         fig.savefig(out/name,dpi=190,bbox_inches='tight');plt.close(fig)
     def boundaries(ax,orientation='x'):
@@ -37,7 +40,7 @@ def main():
         m=None
         for rr in range(5):
             ids=np.where(reg==rr+1)[0]; vals=field[:,ids]
-            xe=np.linspace(bounds[rr],bounds[rr+1],len(ids)+1)*1e3
+            xe=xedges[ids[0]:ids[-1]+2]*1e3
             ye=np.linspace(0,float(y[-1]+(y[1]-y[0])/2),len(y)+1)*1e3
             m=ax.pcolormesh(xe,ye,vals,shading='flat',cmap='viridis',vmin=float(np.nanmin(field)),vmax=float(np.nanmax(field)))
         boundaries(ax);fig.colorbar(m,ax=ax,label=unit)
@@ -50,9 +53,8 @@ def main():
     fig,axs=plt.subplots(1,2,figsize=(12,4.5),sharex=True)
     for rr in (0,2,4):
         ids=np.where(reg==rr+1)[0]
-        dx=widths[rr]/len(ids)
         for ax,field0,name in [(axs[0],na,'Na+'),(axs[1],cl,'Cl−')]:
-            avg=np.average(field0[:,ids],axis=1,weights=np.full(len(ids),dx))
+            avg=np.average(field0[:,ids],axis=1,weights=dxs[ids])
             ax.plot(y*1e3,avg,label=f'Canal {rr+1}')
     for ax,ion in zip(axs,('Na+','Cl−')):
         ax.set(xlabel='Hauteur y (mm)',ylabel='Concentration moyenne (mol/m³)',title=f'{ion} : profils axiaux');ax.legend();ax.grid(alpha=.2)
@@ -70,7 +72,7 @@ def main():
         ids=np.where(reg==rr+1)[0]
         ax.plot(x[ids]*1e3,v[ids]*1e3,marker='.',label=f'Canal {rr+1}')
     boundaries(ax)
-    ax.set(xlabel='Position x (mm)',ylabel='Vitesse verticale (mm/s)',title='Poiseuille : vitesse moyenne par cellule')
+    ax.set(xlabel='Position x (mm)',ylabel='Vitesse verticale (mm/s)',title='Vitesse moyenne par cellule')
     ax.grid(alpha=.2);ax.legend();finish(fig,'06_vitesse_poiseuille.png')
     # Profil de potentiel en travers, au milieu de la hauteur; valeurs distinctes aux membranes.
     mid=len(y)//2
@@ -85,7 +87,9 @@ def main():
     for rr in (0,2,4):
         ids=np.where(reg==rr+1)[0]
         salt=.5*(na[:,ids]+cl[:,ids])
-        inlet=float(np.mean(salt[0]));outlet=float(np.mean(salt[-1]));change=outlet-inlet
+        # V29 : concentration de melange (ponderee par le debit u*dx).
+        wgt=v[ids]*dxs[ids]
+        inlet=float(np.average(salt[0],weights=wgt));outlet=float(np.average(salt[-1],weights=wgt));change=outlet-inlet
         lines.append(f'Canal {rr+1}: c_sel entree={inlet:.6f}, sortie={outlet:.6f} mol/m3, variation={change:+.6f} mol/m3')
     lines.append('Courant moyen par interface (A/m2): '+', '.join(f'{np.mean(ix[:,k]):+.8g}' for k in idx))
     lines.append('Sauts moyens de potentiel de Donnan (mV): '+', '.join(f'{z:+.6f}' for z in (np.mean((a['trace_phi_right']-a['trace_phi_left'])*1e3,axis=0))))

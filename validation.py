@@ -9,8 +9,8 @@ R = 8.31446261815324
 
 def flux_face(cL, cR, pL, pR, DL, DR, hL, hR, z):
     dc = np.log(cR / cL)
-    lm = np.where(np.abs(dc) < 1e-7, 0.5 * (cL + cR),
-                  (cR - cL) / np.where(np.abs(dc) < 1e-7, 1., dc))
+    ratio = np.where(dc == 0, 1., np.expm1(dc) / np.where(dc == 0, 1., dc))
+    lm = cL * ratio
     return -lm * (dc + z * (pR - pL)) / (hL / DL + hR / DR)
 
 def run(path):
@@ -26,7 +26,9 @@ def run(path):
         U=float(d['voltage']); VT=R*float(d['temperature'])/F
         c0=float(d['c_inlet']); v=d['velocity_x']
         widths=d['widths']; dna=d['Dna_region'][reg]; dcl=d['Dcl_region'][reg]
-        nx,ny=len(x),len(y); dx=widths[reg]/np.bincount(reg, minlength=5)[reg]
+        nx,ny=len(x),len(y)
+        # V29 : maillage eventuellement non uniforme ; anciens NPZ = uniforme par region.
+        dx=d['dx'] if 'dx' in d else widths[reg]/np.bincount(reg, minlength=5)[reg]
         dy=float(y[1]-y[0]); N=nx*ny; ni=len(indices); M=ny*ni
         assert q.size==2*N+4*M
         p=phi/VT
@@ -44,7 +46,7 @@ def run(path):
         mu_na=np.log(aL/aR)+pL-pR
         mu_cl=np.log(bL/bR)-pL+pR
         divs=[]; balances=[]
-        print(f'\nV26 | {path} | U={U:.6g} V | converged={bool(d["converged"])} | R_enregistre={float(d["residual_max"]):.3e}')
+        print(f'\nV29 | {path} | U={U:.6g} V | converged={bool(d["converged"])} | R_enregistre={float(d["residual_max"]):.3e}')
         print(f'Electroneutralite max: {np.max(np.abs(na-cl+X[None,:])):.3e} mol/m3')
         for label,c,D,z,fleft,fright in [('Na+',na,dna,1,fnaL,fnaR),('Cl-',cl,dcl,-1,fclL,fclR)]:
             fl=flux_face(c[:,:-1],c[:,1:],p[:,:-1],p[:,1:],D[:-1],D[1:],dx[:-1]/2,dx[1:]/2,z)

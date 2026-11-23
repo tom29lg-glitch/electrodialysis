@@ -81,7 +81,13 @@ def main():
         'ED_X_AEM': str(float(c['charge_aem'])),
         'ED_NEWTON_STEPS': str(int(cfg['newton']['max_iterations'])),
         'ED_NEWTON_TOL': str(finite_positive(cfg['newton']['tolerance'], 'tolerance')),
+        'ED_VELOCITY_PROFILE': str(cfg.get('velocity_profile', 'comsol')),
     })
+    # V29 : rapports de maillage par region (1 = uniforme).
+    grading = list(map(float, cfg['mesh'].get('grading', [1, 1, 1, 1, 1])))
+    if len(grading) != 5 or min(grading) < 1:
+        raise ValueError('mesh.grading doit contenir cinq rapports >= 1')
+    env['ED_GRADING'] = ','.join(map(str, grading))
     # Les valeurs géométriques absentes restent celles par défaut du solveur V28.
     if 'height' in cfg:
         env['ED_HEIGHT'] = str(finite_positive(cfg['height'], 'height'))
@@ -116,11 +122,16 @@ def main():
                     raise ValueError(f'Solution initiale incompatible : {key}')
             if [int(np.sum(d['region'] == k)) for k in range(1, 6)] != nx or len(d['y']) != ny:
                 raise ValueError('Solution initiale incompatible : maillage')
+            old_grading = np.asarray(d['grading']) if 'grading' in d else np.ones(5)
+            if not np.allclose(old_grading, grading):
+                raise ValueError('Solution initiale incompatible : rapports de maillage')
+            if str(d['velocity_profile']) != env['ED_VELOCITY_PROFILE']:
+                raise ValueError('Solution initiale incompatible : profil de vitesse')
             if not np.allclose(d['xreg'][[1, 3]], [float(env['ED_X_CEM']), float(env['ED_X_AEM'])]):
                 raise ValueError('Solution initiale incompatible : charges membranaires')
             if not np.isclose(float(d['Dna_region'][0]), float(env['ED_D_NA'])) or not np.isclose(float(d['Dcl_region'][0]), float(env['ED_D_CL'])):
                 raise ValueError('Solution initiale incompatible : diffusion')
-            widths = np.fromstring(env.get('ED_WIDTHS', '0.001,0.0002,0.001,0.0002,0.001'), sep=',')
+            widths = np.fromstring(env.get('ED_WIDTHS', '0.0005,0.00025,0.001,0.00025,0.0005'), sep=',')
             if not np.allclose(d['widths'], widths, rtol=0, atol=1e-12):
                 raise ValueError('Solution initiale incompatible : largeurs')
             height = float(env.get('ED_HEIGHT', '0.01'))

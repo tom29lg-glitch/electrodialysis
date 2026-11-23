@@ -27,7 +27,20 @@ c0=float(os.getenv("ED_C_INLET","500"))
 uy=float(os.getenv("ED_U_AVG",os.getenv("ED_UY","0.005")))
 H=float(os.getenv("ED_HEIGHT","0.01"))
 nxreg=np.fromstring(os.getenv("ED_NX","3,2,5,2,3"),sep=",",dtype=int)
-widths=np.fromstring(os.getenv("ED_WIDTHS","0.001,0.0002,0.001,0.0002,0.001"),sep=",")
+# V29 : geometrie COMSOL. Les canaux exterieurs sont deux demi-canaux de
+# W_ch/2 qui forment un seul canal de concentrat a travers la frontiere
+# periodique : [W_ch/2, W_m, W_ch, W_m, W_ch/2] = [0.5, 0.25, 1, 0.25, 0.5] mm.
+DEFAULT_WIDTHS="0.0005,0.00025,0.001,0.00025,0.0005"
+widths=np.fromstring(os.getenv("ED_WIDTHS",DEFAULT_WIDTHS),sep=",")
+# V29 : rapport de taille (grande/petite maille) par region, comme
+# l'"element ratio" COMSOL. Canal 1 : fin cote CEM (droite) ; canal 3 : fin
+# cote AEM (gauche) ; CEM, diluat, AEM : symetrique. 1 = maillage uniforme.
+grading=np.fromstring(os.getenv("ED_GRADING","1,1,1,1,1"),sep=",")
+# V29 : "comsol" = vel(t)=3*v_avg*(1-(t/(W_ch/2))^2) comme le modele COMSOL
+# (moyenne reelle 2*v_avg, maximum 3*v_avg, maximum sur la frontiere
+# periodique pour les demi-canaux) ; "poiseuille" = ancien profil V28,
+# parabole propre a chaque region de moyenne v_avg.
+velocity_profile=os.getenv("ED_VELOCITY_PROFILE","comsol").strip().lower()
 ny=int(os.getenv("ED_NY","6"))
 Xreg=np.array([0.,float(os.getenv("ED_X_CEM","-1000")),0.,float(os.getenv("ED_X_AEM","1000")),0.])
 # V28.1 : paramètres COMSOL et correction membranaire de Bruggeman.
@@ -43,28 +56,50 @@ diffusion_factor=np.array([1.,eps_mem**1.5,1.,eps_mem**1.5,1.])
 Dna_reg=diffusion_factor*Dna_bulk
 Dcl_reg=diffusion_factor*Dcl_bulk
 if (len(nxreg)!=5 or len(widths)!=5 or np.any(nxreg<1) or
-    np.any(widths<=0) or ny<2 or H<=0 or T<=0 or c0<=0 or uy<0):
+    np.any(widths<=0) or ny<2 or H<=0 or T<=0 or c0<=0 or uy<0 or
+    len(grading)!=5 or np.any(grading<1) or
+    velocity_profile not in ("comsol","poiseuille")):
     raise ValueError("Parametres de grille invalides")
 nr=nxreg.sum()
 reg=np.repeat(np.arange(5),nxreg)
-dx=np.repeat(widths/nxreg,nxreg)
+def cell_sizes(w,n,ratio,side):
+    """Tailles en progression arithmetique (distribution COMSOL par defaut).
+    side : 'left' ou 'right' = cote fin ; 'sym' = fin aux deux bords."""
+    if n==1 or ratio==1:
+        return np.full(n,w/n)
+    if side=='sym':
+        m=(n+1)//2
+        half=np.linspace(1.,ratio,m)
+        sizes=np.r_[half,half[::-1][n%2:]]
+    else:
+        sizes=np.linspace(1.,ratio,n)
+        if side=='right': sizes=sizes[::-1]
+    return w*sizes/sizes.sum()
+sides=('right','sym','sym','sym','left')
+dx=np.concatenate([cell_sizes(widths[r],nxreg[r],grading[r],sides[r]) for r in range(5)])
 x=np.cumsum(dx)-dx/2
 dy=H/ny
 X=Xreg[reg]
 Dna=Dna_reg[reg]
 Dcl=Dcl_reg[reg]
-# Moyenne exacte du profil de Poiseuille sur chaque volume de controle.
-# u(x) = 6*u_moy*(x-x_g)*(x_d-x)/(x_d-x_g)^2 dans chaque canal.
-# La moyenne sur toute la largeur vaut exactement u_moy.
+# Moyenne exacte du profil de vitesse sur chaque volume de controle.
+# Profil parabolique f(x)=A*(1-((x-xc)/hw)^2) ; primitive
+# P(x)=A*((x-xc)-(x-xc)^3/(3*hw^2)) ; moyenne = (P(b)-P(a))/(b-a).
+edges=np.r_[0.,np.cumsum(dx)]
+total_width=float(np.sum(widths))
 v=np.zeros(nr)
 for rr in (0,2,4):
     mask=np.where(reg==rr)[0]
-    left=sum(widths[:rr]); w=widths[rr]
-    a=(np.cumsum(dx)-dx)[mask]-left
-    b=a+dx[mask]
-    # Primitive de 6*u_moy*(t/w)*(1-t/w) :
-    # 3*u_moy*t**2/w**1 - 2*u_moy*t**3/w**2.
-    primitive=lambda t: uy*(3*t*t/w-2*t*t*t/(w*w))
+    left=float(np.sum(widths[:rr])); w=widths[rr]
+    if velocity_profile=="comsol":
+        amp=3*uy
+        if rr==0:   xc,hw=0.,w            # axe du canal sur la frontiere x=0
+        elif rr==4: xc,hw=total_width,w   # axe du canal sur la frontiere x=L
+        else:       xc,hw=left+w/2,w/2
+    else:
+        amp=1.5*uy; xc,hw=left+w/2,w/2
+    primitive=lambda t,xc=xc,hw=hw,amp=amp: amp*((t-xc)-(t-xc)**3/(3*hw*hw))
+    a=edges[:-1][mask]; b=edges[1:][mask]
     v[mask]=(primitive(b)-primitive(a))/(b-a)
 if np.any(v< -1e-12):
     raise ValueError('Profil Poiseuille negatif: verifier la geometrie')
@@ -88,8 +123,10 @@ def flux_face(cL,cR,pL,pR,DL,DR,hL,hR,z):
     d=hL+hR
     resistance=hL/DL+hR/DR
     dc=np.log(cR/cL)
-    lm=np.where(np.abs(dc)<1e-7,0.5*(cL+cR),
-                (cR-cL)/np.where(np.abs(dc)<1e-7,1.,dc))
+    # V29 : cL*expm1(dc)/dc == (cR-cL)/ln(cR/cL) exactement, sans perte de
+    # chiffres quand cR ~ cL (l'ancienne forme plafonnait le residu a ~1e-6).
+    ratio=np.where(dc==0,1.,np.expm1(dc)/np.where(dc==0,1.,dc))
+    lm=cL*ratio
     return -lm*(np.log(cR/cL)+z*(pR-pL))/resistance
 
 
@@ -248,11 +285,13 @@ if init_file:
         pR0=interp_trace('trace_phi_right')/VT
         q0=np.r_[s0.ravel(),p0.ravel(),np.stack([sL0,sR0,pL0,pR0]).ravel()]
     print('Initialisation par prolongement:',init_file)
-print(f"V28 Newton creux periodique Donnan couplee : {nr} x {ny} cellules, {size} inconnues, {ni} interfaces")
+print(f"V29 Newton creux periodique Donnan couplee : {nr} x {ny} cellules, {size} inconnues, {ni} interfaces")
 print("Prototype cartesien; periodicite x, entree Danckwerts; Poiseuille; pas de Gmsh.")
 print(f"Membranes : porosite={eps_mem:.4g}, DNa_eff={Dna_reg[1]:.6g}, DCl_eff={Dcl_reg[1]:.6g} m2/s")
 print(f"Charges fixes : X_CEM={Xreg[1]:.6g}, X_AEM={Xreg[3]:.6g} mol/m3")
-print(f"Vitesse moyenne cible : {uy:.6g} m/s; vitesse maximale discrete : {v.max():.6g} m/s")
+print(f"Profil de vitesse : {velocity_profile} ; v_avg (parametre) = {uy:.6g} m/s ; vitesse maximale discrete : {v.max():.6g} m/s")
+print(f"Largeurs (mm) : {', '.join(f'{w*1e3:.4g}' for w in widths)} ; rapports de maillage : {', '.join(f'{g:g}' for g in grading)}")
+print(f"Plus petite maille : {dx.min()*1e6:.4g} um ; plus grande : {dx.max()*1e6:.4g} um")
 for rr in (0,2,4):
     kk=np.where(reg==rr)[0]
     print(f"Canal {rr+1}: vitesse moyenne discrete = {np.sum(v[kk]*dx[kk])/widths[rr]:.8g} m/s")
@@ -316,7 +355,7 @@ for t,k in enumerate(interfaces):
           f'Delta phi moyen={(info[11][:,t]-info[10][:,t]).mean()*VT*1000:+.5f} mV, '
           f'i_x moyen={np.mean(F*(info[0][:,t]-info[2][:,t])):+.5e} A/m2')
 out=Path(os.getenv('ED_OUTPUT_NPZ',str(Path(__file__).resolve().parent/'electrodialyse_membranes_v28.npz')))
-np.savez(out,x=x,y=(np.arange(ny)+0.5)*dy,region=reg+1,
+np.savez(out,x=x,dx=dx,y=(np.arange(ny)+0.5)*dy,region=reg+1,grading=grading,
          c_na=na,c_cl=cl,phi=p*VT,X=X,
          current_x=F*(fna-fcl),flux_na_x=fna,flux_cl_x=fcl,
          interface_indices=interfaces,trace_na_left=info[6],trace_na_right=info[7],
@@ -324,7 +363,7 @@ np.savez(out,x=x,y=(np.arange(ny)+0.5)*dy,region=reg+1,
          trace_phi_left=info[10]*VT,trace_phi_right=info[11]*VT,
          residual_max=maxerr,converged=bool(fit.success and maxerr<1e-6),
          solution_vector=fit.x, evaluations=fit.nfev,
-         voltage=U, c_inlet=c0, uy=uy, u_avg=uy, velocity_x=v, velocity_profile="poiseuille_cell_average", temperature=T,
+         voltage=U, c_inlet=c0, uy=uy, u_avg=uy, velocity_x=v, velocity_profile=velocity_profile, temperature=T,
          boundary_type='periodic_x_danckwerts_y',
          widths=widths, xreg=Xreg, membrane_porosity=eps_mem,
          epsilon_region=eps_reg, Dna_region=Dna_reg, Dcl_region=Dcl_reg,
