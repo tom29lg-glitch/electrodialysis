@@ -30,7 +30,8 @@ def run(path):
         # V29 : maillage eventuellement non uniforme ; anciens NPZ = uniforme par region.
         dx=d['dx'] if 'dx' in d else widths[reg]/np.bincount(reg, minlength=5)[reg]
         dy=float(y[1]-y[0]); N=nx*ny; ni=len(indices); M=ny*ni
-        assert q.size==2*N+4*M
+        assert q.size in (2*N+4*M, 2*N+4*M+1)   # +1 : tension inconnue en mode courant impose
+        q=q[:2*N+4*M]
         p=phi/VT
         sL,sR,pL,pR=q[2*N:].reshape(4,ny,ni)
         def conc(s,fixed):

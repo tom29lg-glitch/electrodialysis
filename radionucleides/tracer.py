@@ -46,7 +46,8 @@ def flux_face(cL, cR, pL, pR, DL, DR, hL, hR, z):
     return -lm * (dc + z * (pR - pL)) / (hL / DL + hR / DR)
 
 
-def solve_tracer(npz, z, D_bulk, c_in, K_cem=1.0, K_aem=1.0, tol=1e-6, max_steps=40, verbose=True):
+def solve_tracer(npz, z, D_bulk, c_in, K_cem=1.0, K_aem=1.0, tol=1e-6, max_steps=40, verbose=True, c_in_conc=None):
+    """c_in : entree du diluat ; c_in_conc : entree des canaux de concentrat (defaut : c_in)."""
     d = np.load(npz, allow_pickle=False)
     if not bool(d['converged']):
         raise ValueError('Solution NaCl non convergee : traceur refuse')
@@ -75,6 +76,7 @@ def solve_tracer(npz, z, D_bulk, c_in, K_cem=1.0, K_aem=1.0, tol=1e-6, max_steps
     N = nr * ny
     M = ny * ni
     inlet = v > 0
+    cin_cell = np.where(reg == 2, c_in, c_in if c_in_conc is None else c_in_conc)
     FLUX = D_bulk * c_in / 1e-3
     DIV = FLUX / 1e-3
 
@@ -103,7 +105,7 @@ def solve_tracer(npz, z, D_bulk, c_in, K_cem=1.0, K_aem=1.0, tol=1e-6, max_steps
         fy = flux_face(c[:-1, :], c[1:, :], p[:-1, :], p[1:, :], Dc[None, :], Dc[None, :], dy / 2, dy / 2, z) + v[None, :] * c[:-1, :]
         div[:-1, :] += fy / dy
         div[1:, :] -= fy / dy
-        div[0, inlet] -= v[inlet] * c_in / dy
+        div[0, inlet] -= v[inlet] * cin_cell[inlet] / dy
         div[-1, inlet] += v[inlet] * c[-1, inlet] / dy
         eq = np.r_[div.ravel() / DIV, (fL - fR).ravel() / FLUX]
         if full:

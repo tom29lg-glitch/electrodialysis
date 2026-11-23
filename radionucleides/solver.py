@@ -23,7 +23,16 @@ R=8.31446261815324
 T=float(os.getenv("ED_T","298.15"))
 VT=R*T/F
 U=float(os.getenv("ED_VOLTAGE","0.006"))
+# Mode a courant impose : ED_CURRENT = densite de courant moyenne cible (A/m2, > 0 dans le
+# sens de la tension positive). La tension U devient une inconnue (ED_VOLTAGE = valeur de depart)
+# et une equation supplementaire impose le courant moyen a travers la face periodique.
+_I=os.getenv("ED_CURRENT","").strip()
+current_mode=bool(_I)
+I_target=float(_I) if current_mode else None
 c0=float(os.getenv("ED_C_INLET","500"))
+# Concentration d'entree des canaux de concentrat (recirculation : les deux reservoirs divergent).
+# Par defaut egale a celle du diluat, comme dans le modele COMSOL.
+c0_conc=float(os.getenv("ED_C_INLET_CONC",str(c0)))
 uy=float(os.getenv("ED_U_AVG",os.getenv("ED_UY","0.005")))
 H=float(os.getenv("ED_HEIGHT","0.01"))
 nxreg=np.fromstring(os.getenv("ED_NX","3,2,5,2,3"),sep=",",dtype=int)
@@ -104,6 +113,7 @@ for rr in (0,2,4):
 if np.any(v< -1e-12):
     raise ValueError('Profil Poiseuille negatif: verifier la geometrie')
 v=np.maximum(v,0.)
+cin_cell=np.where(reg==2,c0,c0_conc)   # concentration d'entree de chaque colonne (diluat = region 2)
 N=nr*ny
 # variables: a=log(cNa / c0), p=phi / VT.
 # cCl=cNa+X. Parametrisation positive: cNa=0.5*(sqrt(X^2+4 exp(2s))-X)
@@ -144,7 +154,7 @@ def concentration(s, fixed):
     return na,na+fixed
 
 def interface_data(q,na,cl,p):
-    traces=q[2*N:].reshape(4,ny,ni)
+    traces=q[2*N:2*N+4*M].reshape(4,ny,ni)
     sL,sR,pL,pR=traces
     XL=X[interfaces][None,:]
     XR=X[interfaces+1][None,:]
@@ -180,9 +190,10 @@ def residual(q,diagnostics=False):
     divcl[:,:-1]+=fcl/dx[:-1]; divcl[:,1:]-=fclr/dx[1:]
     # Periodicite laterale: meme flux sortant a droite et entrant a gauche.
     # p(x+L)=p(x)+U/VT; concentration periodique.
-    fper_na=flux_face(na[:,-1],na[:,0],p[:,-1],p[:,0]+U/VT,
+    uvt=q[2*N+4*M] if current_mode else U/VT   # saut de potentiel periodique (unites RT/F)
+    fper_na=flux_face(na[:,-1],na[:,0],p[:,-1],p[:,0]+uvt,
                       Dna[-1],Dna[0],dx[-1]/2,dx[0]/2,+1)
-    fper_cl=flux_face(cl[:,-1],cl[:,0],p[:,-1],p[:,0]+U/VT,
+    fper_cl=flux_face(cl[:,-1],cl[:,0],p[:,-1],p[:,0]+uvt,
                       Dcl[-1],Dcl[0],dx[-1]/2,dx[0]/2,-1)
     divna[:,-1]+=fper_na/dx[-1]; divna[:,0]-=fper_na/dx[0]
     divcl[:,-1]+=fper_cl/dx[-1]; divcl[:,0]-=fper_cl/dx[0]
@@ -191,7 +202,7 @@ def residual(q,diagnostics=False):
                      D[None,:],D[None,:],dy/2,dy/2,z)+v[None,:]*c[:-1,:]
         div[:-1,:]+=fy/dy; div[1:,:]-=fy/dy
         inlet=v>0
-        fin=v[inlet]*c0  # Danckwerts: flux total entrant = u*c0
+        fin=v[inlet]*cin_cell[inlet]  # Danckwerts: flux total entrant = u*c_entree
         div[0,inlet]-=fin/dy
         fout=v[inlet]*c[-1,inlet]
         div[-1,inlet]+=fout/dy
@@ -203,11 +214,15 @@ def residual(q,diagnostics=False):
     # Somme des equations de charge = 0 car les flux sont periodiques
     # et les entrees/sorties de convection sont electroneutres.
     eq[N] = p[0,0]
+    if current_mode:
+        # courant moyen a travers la face periodique = -I (convention i_x < 0 pour U > 0)
+        i_mean=float(np.mean(F*(fper_na-fper_cl)))
+        eq=np.r_[eq,(i_mean+I_target)/max(I_target,1.0)]
     if diagnostics: return na,cl,p,divna,divcl,fna,fcl,info
     return eq
 
 # Matrice de structure du Jacobien: chaque cellule et voisins; traces des faces.
-size=2*N+4*M
+size=2*N+4*M+(1 if current_mode else 0)
 pat=lil_matrix((size,size),dtype=np.int8)
 for j in range(ny):
     for k in range(nr):
@@ -229,9 +244,18 @@ for j in range(ny):
         rows += [2*N+b*M+m for b in range(4)]
         for row in rows:
             for col in trace_cols+cell_cols: pat[row,col]=1
+if current_mode:
+    # U agit sur les bilans des colonnes de part et d'autre de la face periodique,
+    # et l'equation de courant depend de ces memes cellules et de U.
+    last=size-1
+    for j in range(ny):
+        for k in (0,nr-1):
+            for row in (j*nr+k,N+j*nr+k):
+                pat[row,last]=1; pat[last,row]=1
+    pat[last,last]=1
 
 # Initialisation Donnan par continuite de mu a potentiel nul, puis tension.
-s0=np.zeros((ny,nr))
+s0=np.broadcast_to(np.log(cin_cell/c0)[None,:],(ny,nr)).copy()
 p0=np.broadcast_to(np.arcsinh(X[None,:]/(2*c0)) +
                    U/VT*(x[None,:]/sum(widths)),(ny,nr)).copy()
 sL0=np.zeros((ny,ni)); sR0=np.zeros((ny,ni))
@@ -241,6 +265,7 @@ face_p=U/VT*xface/sum(widths)
 pL0=np.broadcast_to(np.arcsinh(X[interfaces][None,:]/(2*c0))+face_p,(ny,ni)).copy()
 pR0=np.broadcast_to(np.arcsinh(X[interfaces+1][None,:]/(2*c0))+face_p,(ny,ni)).copy()
 q0=np.r_[s0.ravel(),p0.ravel(),np.stack([sL0,sR0,pL0,pR0]).ravel()]
+if current_mode: q0=np.r_[q0,U/VT]
 # V18: initialisation par prolongement de la solution d'une grille plus grossiere.
 init_file=os.getenv('ED_INIT_NPZ','').strip()
 if init_file:
@@ -284,6 +309,7 @@ if init_file:
         pL0=interp_trace('trace_phi_left')/VT
         pR0=interp_trace('trace_phi_right')/VT
         q0=np.r_[s0.ravel(),p0.ravel(),np.stack([sL0,sR0,pL0,pR0]).ravel()]
+        if current_mode: q0=np.r_[q0,U/VT]
     print('Initialisation par prolongement:',init_file)
 print(f"V29 Newton creux periodique Donnan couplee : {nr} x {ny} cellules, {size} inconnues, {ni} interfaces")
 print("Prototype cartesien; periodicite x, entree Danckwerts; Poiseuille; pas de Gmsh.")
@@ -340,6 +366,9 @@ for iteration in range(max_steps):
         if not accepted:
             message='Recherche lineaire echouee'; break
 fit=SimpleNamespace(x=q,success=success,message=message,nfev=iteration+1)
+if current_mode:
+    U=float(fit.x[-1]*VT)
+    print(f'Courant impose : {I_target:g} A/m2 -> tension calculee U = {U:.6f} V')
 na,cl,p,dna,dcl,fna,fcl,info=residual(fit.x,True)
 err=residual(fit.x)
 maxerr=np.max(np.abs(err))
@@ -363,7 +392,7 @@ np.savez(out,x=x,dx=dx,y=(np.arange(ny)+0.5)*dy,region=reg+1,grading=grading,
          trace_phi_left=info[10]*VT,trace_phi_right=info[11]*VT,
          residual_max=maxerr,converged=bool(fit.success and maxerr<1e-6),
          solution_vector=fit.x, evaluations=fit.nfev,
-         voltage=U, c_inlet=c0, uy=uy, u_avg=uy, velocity_x=v, velocity_profile=velocity_profile, temperature=T,
+         voltage=U, current_mode=current_mode, current_target=(I_target if current_mode else np.nan), c_inlet=c0, c_inlet_conc=c0_conc, uy=uy, u_avg=uy, velocity_x=v, velocity_profile=velocity_profile, temperature=T,
          boundary_type='periodic_x_danckwerts_y',
          widths=widths, xreg=Xreg, membrane_porosity=eps_mem,
          epsilon_region=eps_reg, Dna_region=Dna_reg, Dcl_region=Dcl_reg,
