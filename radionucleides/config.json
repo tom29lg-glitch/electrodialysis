@@ -1,0 +1,68 @@
+{
+  "simulation_name": "test",
+  "voltage": 1.5,
+  "ions": {
+    "Na+": {
+      "diffusion": 2.5e-09
+    },
+    "Cl-": {
+      "diffusion": 2e-09
+    }
+  },
+  "concentration_inlet": 500,
+  "temperature": 298.15,
+  "velocity": 0.005,
+  "velocity_profile": "comsol",
+  "height": 0.01,
+  "widths": [
+    0.0005,
+    0.00025,
+    0.001,
+    0.00025,
+    0.0005
+  ],
+  "_geometrie": {
+    "source": "references/electrodialysis.mph : L=10 mm, W_ch=1 mm, W_m=0.25 mm, v_avg=5 mm/s, DNa=2.5e-9, DCl=2e-9",
+    "widths": "[W_ch/2, W_m, W_ch, W_m, W_ch/2] : les deux demi-canaux exterieurs forment un seul canal de concentrat a travers la frontiere periodique",
+    "velocity_profile": "'comsol' = 3*v_avg*(1-(t/(W_ch/2))^2), moyenne reelle 2*v_avg ; 'poiseuille' = ancien profil V28 de moyenne v_avg"
+  },
+  "membrane": {
+    "porosity": 0.15,
+    "charge_cem": -1000,
+    "charge_aem": 1000
+  },
+  "mesh": {
+    "_commentaires": {
+      "description": "Nombre de cellules dans chaque région selon x, et selon y.",
+      "ordre": "Canal 1, membrane CEM, canal 2, membrane AEM, canal 3",
+      "maillage_rapide": "nx_regions = [3, 2, 5, 2, 3], ny = 6 (15 x 6)",
+      "maillage_intermediaire": "nx_regions = [9, 6, 15, 6, 9], ny = 18 (45 x 18)",
+      "maillage_fin": "nx_regions = [15, 10, 25, 10, 15], ny = 30 (75 x 30)",
+      "conseil": "Utiliser 45 x 18 pour les calculs courants et 75 x 30 pour des calculs plus fins.",
+      "grading": "Rapport grande/petite maille par region (element ratio COMSOL). Canal 1 fin cote CEM, canal 3 fin cote AEM, autres symetriques. COMSOL : [10, 2, 10, 2, 10].",
+      "maillage_comsol": "COMSOL : nx_regions = [20, 20, 100, 20, 20], ny = 100, grading = [10, 2, 10, 2, 10]"
+    },
+    "nx_regions": [
+      9,
+      6,
+      15,
+      6,
+      9
+    ],
+    "ny": 18,
+    "grading": [
+      10,
+      2,
+      10,
+      2,
+      10
+    ]
+  },
+  "newton": {
+    "tolerance": 4e-07,
+    "max_iterations": 60
+  },
+  "initial_solution": null,
+  "generate_plots": true,
+  "run_validation": true
+}

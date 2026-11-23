@@ -140,7 +140,7 @@ def main():
     ap.add_argument('--c1000', type=Path, required=True, help='solution.npz a cMem = 1000 mol/m3')
     ap.add_argument('--c500', type=Path)
     ap.add_argument('--c0', type=Path)
-    ap.add_argument('--ref', type=Path, default=ROOT / 'references' / 'comsol_figures_numerisees.npz')
+    ap.add_argument('--ref', type=Path, default=ROOT.parent / 'references' / 'comsol_figures_numerisees.npz')
     ap.add_argument('--output', type=Path, help='dossier de sortie (defaut : comparaison_comsol a cote de --c1000)')
     a = ap.parse_args()
     ref = np.load(a.ref)

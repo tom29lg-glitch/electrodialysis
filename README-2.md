@@ -1,5 +1,7 @@
 # Simulation d'électrodialyse 2D
 
+> **Réorganisation (novembre 2026)** : les scripts sont maintenant dans `reference_comsol/` (modèle COMSOL figé) et `radionucleides/` (modèle qui évolue). Pour suivre ce guide, se placer d'abord dans l'un de ces dossiers (`cd radionucleides`). Voir `README.md`.
+
 ## 1. À quoi sert ce projet ?
 
 Ce projet permet de simuler le fonctionnement d'une cellule d'électrodialyse avec Python.
@@ -238,3 +240,46 @@ Cependant :
 - Il n'est pas encore adapté à la simulation d'ions radioactifs ou multivalents.
 - Les résultats doivent être vérifiés, notamment en comparant plusieurs maillages.
 - La convergence numérique ne garantit pas à elle seule que le modèle représente parfaitement une expérience réelle.
+
+## 10. Évolutions V29 : géométrie COMSOL, radionucléides, validation
+
+### Géométrie COMSOL et radionucléides en traces
+
+**Géométrie alignée sur `references/electrodialysis.mph`** (L = 10 mm, W_ch = 1 mm, W_m = 0,25 mm) :
+
+- largeurs `[W_ch/2, W_m, W_ch, W_m, W_ch/2]` : les deux canaux extérieurs sont des demi-canaux qui forment un seul canal de concentrat à travers la frontière périodique ;
+- `velocity_profile = "comsol"` : vel = 3·v_avg·(1 − (t/(W_ch/2))²), comme COMSOL (moyenne réelle 2·v_avg = 10 mm/s, maximum sur la frontière périodique dans les demi-canaux). `"poiseuille"` redonne l'ancien profil V28 ;
+- `mesh.grading` : rapport grande/petite maille par région (« element ratio » COMSOL), resserré vers les membranes. COMSOL : `[10, 2, 10, 2, 10]` avec `nx_regions = [20, 20, 100, 20, 20]`, `ny = 100`.
+
+Avec `ED_WIDTHS=0.001,0.0002,0.001,0.0002,0.001`, `ED_VELOCITY_PROFILE=poiseuille` et `grading = 1`, le solveur redonne exactement les résultats V28.
+
+**Radionucléide en traces (`tracer.py`)** : Nernst–Planck pour une espèce en traces (Cs⁺, Sr²⁺, Co²⁺…) dans le potentiel déjà calculé, même discrétisation que `solver.py`, Donnan généralisé avec un coefficient de partage K par membrane (K = 1 : Donnan idéal).
+
+```bash
+python tracer.py resultats/<dossier>/solution.npz --species Cs+
+python tracer.py resultats/<dossier>/solution.npz --species Sr2+ --c-in 0.0376 --K-cem 1
+python tracer.py resultats/<dossier>/solution.npz --z 2 --D 0.79e-9   # espèce quelconque
+```
+
+Sorties : `tracer_<espece>.npz` et `.json` (élimination en un passage, rapport élimination traceur / sel, nombre de transport dans la CEM, facteur de séparation par rapport à Na⁺).
+
+Test de cohérence : `--species Na+ --D 2.5e-9 --c-in 500` redonne c_Na du solveur (écart relatif ≈ 2·10⁻¹⁰).
+
+### Validation contre COMSOL (`comparaison_comsol.py`)
+
+Les figures 5 à 9 du PDF COMSOL sont numérisées dans `references/comsol_figures_numerisees.npz` (script : `references/numerisation_figures_comsol.py`). `comparaison_comsol.py` trace les résultats Python sur les mêmes coupes et écrit un tableau d'écarts.
+
+1. Dans `config.json` : `nx_regions = [20, 20, 100, 20, 20]`, `ny = 60`, `grading = [10, 2, 10, 2, 10]`, D de COMSOL (2,5e-9 et 2e-9), tension 1,5 V.
+2. Lancer `main.py` trois fois, avec `charge_cem` / `charge_aem` = −1000 / 1000, −500 / 500 et 0 / 0.
+3. Comparer :
+
+```bash
+python comparaison_comsol.py --c1000 resultats/<dossier_1000>/solution.npz \
+    --c500 resultats/<dossier_500>/solution.npz --c0 resultats/<dossier_0>/solution.npz
+```
+
+Résultat sur le maillage 180 × 60 (`resultats/comparaison_comsol_180x60/`) : potentiel, concentrations, flux et courant le long de l'AEM à moins de 0,2 % des valeurs COMSOL lues sur les figures (précision de lecture ≈ 0,3 % de l'axe).
+
+### Limites de la V29
+
+Le solveur principal reste construit pour deux espèces monovalentes, Na⁺ et Cl⁻ (sel porteur). Les radionucléides sont traités en traces par `tracer.py` : valable tant que leur concentration reste très inférieure à celle du sel. Un sel porteur multi-ions (Na₂SO₄, Ca(NO₃)₂) ou un radionucléide majoritaire demanderait une extension du solveur. Le fonctionnement en recirculation (évolution temporelle des réservoirs) n'est pas encore modélisé.
