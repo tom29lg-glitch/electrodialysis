@@ -32,6 +32,12 @@ F = 96485.33212
 R = 8.31446261815324
 
 
+def geometrie(a):
+    """Variables d'environnement de geometrie pour solver.py (demi-canaux exterieurs, comme COMSOL)."""
+    w = [a.wch / 2, a.wm, a.wch, a.wm, a.wch / 2]
+    return dict(ED_WIDTHS=','.join(repr(x) for x in w), ED_HEIGHT=repr(a.L), ED_U_AVG=repr(a.vavg))
+
+
 def leveque(c0, DNa, DCl, L=0.01, h=1e-3, V0=0.01):
     """Courant limite de Leveque a la sortie et moyen sur la longueur, pour la CEM et l'AEM."""
     D = 2 * DNa * DCl / (DNa + DCl)                 # coefficient de diffusion du sel
@@ -60,7 +66,10 @@ def main():
     ap.add_argument('--cmem', type=float, default=1000., help='charge fixe des membranes, mol/m3')
     ap.add_argument('--DNa', type=float, default=1.334e-9)
     ap.add_argument('--DCl', type=float, default=2.032e-9)
-    ap.add_argument('--vavg', type=float, default=0.005, help='parametre v_avg COMSOL (moyenne reelle 2*v_avg)')
+    ap.add_argument('--vavg', type=float, default=0.005, help='parametre v_avg COMSOL : vitesse moyenne reelle = 2 x v_avg')
+    ap.add_argument('--wch', type=float, default=1e-3, help='epaisseur des canaux (m) ; Xie : 0,95e-3 (espaceur)')
+    ap.add_argument('--wm', type=float, default=0.25e-3, help='epaisseur des membranes (m) ; Xie : 0,10e-3')
+    ap.add_argument('--L', type=float, default=0.01, help='longueur d ecoulement (m) ; Xie : ~0,90 (108,5 cm2 / 1,2 cm)')
     ap.add_argument('--rapide', action='store_true')
     ap.add_argument('--dossier', type=Path, help='refaire seulement les figures a partir d un calcul deja fait (dossier iv_...)')
     a = ap.parse_args()
@@ -78,7 +87,7 @@ def main():
     env = {k: v for k, v in os.environ.items() if not k.startswith('ED_')}
     env.update(ED_NX=nx, ED_NY=str(ny), ED_X_CEM=str(-a.cmem), ED_X_AEM=str(a.cmem),
                ED_GRADING='10,2,10,2,10', ED_VELOCITY_PROFILE='comsol', ED_D_NA=str(a.DNa),
-               ED_D_CL=str(a.DCl), ED_C_INLET=str(a.c0), ED_U_AVG=str(a.vavg),
+               ED_D_CL=str(a.DCl), ED_C_INLET=str(a.c0), **geometrie(a),
                ED_NEWTON_STEPS='60', ED_NEWTON_TOL='4e-7')
     rows, V, step, prev, n, t0 = [], 0.0, 0.02, '', 0, time.time()
     while V < a.vmax - 1e-12:
@@ -105,7 +114,7 @@ def main():
 
 
 def finish(rows, folder, a, nxt, ny, t0):
-    lev, delta_L, Ds = leveque(a.c0, a.DNa, a.DCl, V0=2 * a.vavg)
+    lev, delta_L, Ds = leveque(a.c0, a.DNa, a.DCl, L=a.L, h=a.wch, V0=2 * a.vavg)
     with (folder / 'courbe_iv.csv').open('w', newline='') as fh:
         w = csv.writer(fh)
         w.writerow(['tension_V', 'courant_A_m2', 'c_min_surface_CEM_molm3', 'c_min_surface_AEM_molm3'])
